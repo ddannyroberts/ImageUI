@@ -1,93 +1,115 @@
+import sys
 import os
-from tkinter import Tk, Label, Button, filedialog, StringVar, OptionMenu, Entry
 from PIL import Image
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QFileDialog, QLineEdit, QProgressBar, QMessageBox
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
-# === Preset ขนาดภาพ Facebook ===
-preset_sizes = {
-    "Profile Picture (600x600)": (600, 600),
-    "Cover Page (1640x924)": (1640, 924),
-    "Cover Group (1200x628)": (1200, 628),
-    "Cover Event (1640x628)": (1640, 628),
-    "Story (1080x1920)": (1080, 1920),
-    "Timeline Vertical (1200x1500)": (1200, 1500),
-    "Timeline Square (1200x1200)": (1200, 1200),
-    "Timeline Horizontal (1200x675)": (1200, 675)
-}
 
-# === ฟังก์ชันหลัก ===
-def process_images():
-    quality = quality_entry.get()
-    try:
-        quality = int(quality)
-        if not (1 <= quality <= 100):
-            raise ValueError
-    except ValueError:
-        status_label.config(text="❌ Enter a valid quality (1-100)")
-        return
+class ResizeWorker(QThread):
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
 
-    if not selected_files:
-        status_label.config(text="❌ Please select image files first")
-        return
+    def __init__(self, image_path, width, height):
+        super().__init__()
+        self.image_path = image_path
+        self.width = width
+        self.height = height
 
-    size = preset_sizes[preset_var.get()]
-    output_folder_resized = os.path.join("output", "resized")
-    output_folder_compressed = os.path.join("output", "compressed")
-    os.makedirs(output_folder_resized, exist_ok=True)
-    os.makedirs(output_folder_compressed, exist_ok=True)
-
-    for file_path in selected_files:
+    def run(self):
         try:
-            image = Image.open(file_path)
-            file_name = os.path.basename(file_path)
-            file_root, file_ext = os.path.splitext(file_name)
+            img = Image.open(self.image_path)
+            filename = os.path.basename(self.image_path)
+            name, ext = os.path.splitext(filename)
 
-            # === 1. Resize แล้วเซฟใน /output/resized/
-            resized_image = image.resize(size)
-            resized_path = os.path.join(output_folder_resized, f"{file_root}_resized{file_ext}")
-            resized_image.save(resized_path)
-            print(f"✅ Resized saved: {resized_path}")
+            resized_img = img.resize((self.width, self.height))
+            resized_half = img.resize((self.width // 2, self.height // 2))
 
-            # === 2. ลดคุณภาพ แล้วเซฟใน /output/compressed/
-            compressed_image = image.convert("RGB")
-            compressed_path = os.path.join(output_folder_compressed, f"{file_root}_compressed.jpg")
-            compressed_image.save(compressed_path, quality=quality)
-            print(f"✅ Compressed saved: {compressed_path}")
+            os.makedirs("output", exist_ok=True)
+            output1 = os.path.join("output", f"{name}_resized{ext}")
+            output2 = os.path.join("output", f"{name}_resized_half{ext}")
 
+            resized_img.save(output1)
+            resized_half.save(output2)
+
+            self.progress.emit(100)
+            self.finished.emit(f"Saved:\n- {output1}\n- {output2}")
         except Exception as e:
-            status_label.config(text=f"❌ Error: {e}")
+            self.finished.emit(str(e))
+
+
+class ImageResizer(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Image Resizer (Double Output)")
+        self.setGeometry(100, 100, 400, 250)
+
+        self.layout = QVBoxLayout()
+
+        self.label = QLabel("Choose an image:")
+        self.layout.addWidget(self.label)
+
+        self.choose_button = QPushButton("Browse")
+        self.choose_button.clicked.connect(self.choose_file)
+        self.layout.addWidget(self.choose_button)
+
+        size_layout = QHBoxLayout()
+        self.width_input = QLineEdit()
+        self.width_input.setPlaceholderText("Width")
+        self.height_input = QLineEdit()
+        self.height_input.setPlaceholderText("Height")
+        size_layout.addWidget(self.width_input)
+        size_layout.addWidget(self.height_input)
+        self.layout.addLayout(size_layout)
+
+        self.start_button = QPushButton("Resize Image")
+        self.start_button.clicked.connect(self.resize_image)
+        self.layout.addWidget(self.start_button)
+
+        self.progress = QProgressBar()
+        self.layout.addWidget(self.progress)
+
+        self.result_label = QLabel("")
+        self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.addWidget(self.result_label)
+
+        self.setLayout(self.layout)
+        self.image_path = None
+
+    def choose_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Choose Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
+        if file_path:
+            self.image_path = file_path
+            self.label.setText(f"Selected: {os.path.basename(file_path)}")
+
+    def resize_image(self):
+        if not self.image_path:
+            QMessageBox.warning(self, "Error", "Please choose an image.")
             return
 
-    status_label.config(text="✅ Done! Files saved in output/resized/ and output/compressed/")
+        try:
+            width = int(self.width_input.text())
+            height = int(self.height_input.text())
+        except ValueError:
+            QMessageBox.warning(self, "Error", "Width and height must be integers.")
+            return
 
-def browse_files():
-    global selected_files
-    selected_files = filedialog.askopenfilenames(
-        title="Select Images",
-        filetypes=[("Image Files", "*.jpg *.jpeg *.png")]
-    )
-    file_label.config(text=f"{len(selected_files)} file(s) selected")
+        self.progress.setValue(0)
+        self.result_label.setText("")
 
-# === GUI Layout ===
-app = Tk()
-app.title("Facebook Image Resizer & Compressor")
-app.geometry("420x310")
+        self.worker = ResizeWorker(self.image_path, width, height)
+        self.worker.progress.connect(self.progress.setValue)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.start()
 
-Label(app, text="📐 Choose Facebook Size:").pack()
-preset_var = StringVar(app)
-preset_var.set("Story (1080x1920)")
-OptionMenu(app, preset_var, *preset_sizes.keys()).pack()
+    def on_finished(self, result):
+        self.result_label.setText(result)
 
-Label(app, text="🧪 Enter JPEG Quality (1-100):").pack()
-quality_entry = Entry(app)
-quality_entry.insert(0, "30")
-quality_entry.pack()
 
-Button(app, text="📂 Select Images", command=browse_files).pack(pady=5)
-file_label = Label(app, text="No file selected")
-file_label.pack()
-
-Button(app, text="🚀 Process Images", command=process_images).pack(pady=10)
-status_label = Label(app, text="")
-status_label.pack()
-
-app.mainloop()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = ImageResizer()
+    window.show()
+    sys.exit(app.exec())
