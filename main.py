@@ -41,21 +41,18 @@ class ResizeWorker(QThread):
             for i, (abs_path, rel_path) in enumerate(self.image_infos):
                 img = Image.open(abs_path)
                 filename = os.path.basename(abs_path)
-                name, ext = os.path.splitext(filename)
 
                 # Fixed resize
                 fixed_dir = os.path.join(fixed_output, os.path.dirname(rel_path))
                 os.makedirs(fixed_dir, exist_ok=True)
-                fixed_filename = f"{name}_{self.width}x{self.height}{ext}"
-                img.resize((self.width, self.height)).save(os.path.join(fixed_dir, fixed_filename))
+                img.resize((self.width, self.height)).save(os.path.join(fixed_dir, filename))
 
                 # Percent resize
                 percent_dir = os.path.join(percent_output, os.path.dirname(rel_path))
                 os.makedirs(percent_dir, exist_ok=True)
                 pw = int(img.width * self.percent / 100)
                 ph = int(img.height * self.percent / 100)
-                percent_filename = f"{name}_{self.percent}%{ext}"
-                img.resize((pw, ph)).save(os.path.join(percent_dir, percent_filename))
+                img.resize((pw, ph)).save(os.path.join(percent_dir, filename))
 
                 self.progress.emit(int((i + 1) / total * 100))
 
@@ -276,4 +273,3 @@ if __name__ == "__main__":
     window = ImageResizer()
     window.show()
     sys.exit(app.exec())
-
