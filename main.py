@@ -1,15 +1,8 @@
 import sys
 import os
-import platform
 from PIL import Image
-from PyQt6.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QLineEdit, QProgressBar, QMessageBox, QListWidget, QListWidgetItem,
-    QAbstractItemView
-)
-from PyQt6.QtGui import (
-    QPixmap, QIcon, QDragEnterEvent, QDropEvent, QKeyEvent, QKeySequence, QIntValidator, QShortcut
-)
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QLineEdit, QProgressBar, QMessageBox, QListWidget, QListWidgetItem, QAbstractItemView
+from PyQt6.QtGui import QPixmap, QIcon, QDragEnterEvent, QDropEvent, QKeyEvent, QKeySequence, QIntValidator, QShortcut
 from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 
 
@@ -256,17 +249,6 @@ class ImageResizer(QWidget):
                 if path not in [p for p, _ in self.image_infos]:
                     self.image_infos.append((path, rel_path))
         self.load_image_list()
-
-    def keyPressEvent(self, event: QKeyEvent):
-        if event.matches(QKeySequence.StandardKey.SelectAll):
-            self.image_list.selectAll()
-        elif event.matches(QKeySequence.StandardKey.Undo):
-            self.undo_delete()
-        elif event.key() == Qt.Key.Key_Delete:
-            self.delete_selected_images()
-        elif event.key() == Qt.Key.Key_Backspace:
-            self.delete_all_images()
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
