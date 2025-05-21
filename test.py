@@ -47,13 +47,18 @@ class ResizeProcess(QObject):
             if not os.path.isdir(self.full_output_folder):
                 os.makedirs(self.full_output_folder, exist_ok=True)
 
+            self.folder_original_output = os.path.join(self.full_output_folder, f"{self.villa_name}_High Res")
             self.folder_dimension_output = os.path.join(self.full_output_folder, f"{self.villa_name}_Resize")
-            self.folder_percent_output = os.path.join(self.full_output_folder, f"{self.villa_name}_Low res")
+            self.folder_percent_output = os.path.join(self.full_output_folder, f"{self.villa_name}_Low Res")
 
-            if not os.path.isdir(self.folder_dimension_output):
-                os.makedirs(self.folder_dimension_output, exist_ok=True)
-            if not os.path.isdir(self.folder_percent_output):
-                os.makedirs(self.folder_percent_output, exist_ok=True)
+            if not os.path.isdir(self.folder_original_output):
+                os.makedirs(self.folder_original_output, exist_ok=True)
+            if self.width is not None and self.height is not None:
+                if not os.path.isdir(self.folder_dimension_output):
+                    os.makedirs(self.folder_dimension_output, exist_ok=True)
+            if self.percent is not None:
+                if not os.path.isdir(self.folder_percent_output):
+                    os.makedirs(self.folder_percent_output, exist_ok=True)
 
 
             total = len(self.images)
@@ -63,6 +68,7 @@ class ResizeProcess(QObject):
                 return
 
             for i, (dir_name, file_name) in enumerate(self.images):
+                dir_original_output = os.path.join(self.folder_original_output, dir_name)
                 dir_dimension_output = os.path.join(self.folder_dimension_output, dir_name)
                 dir_percent_output = os.path.join(self.folder_percent_output, dir_name)
                 file_extension = os.path.splitext(file_name)[1]
@@ -73,17 +79,22 @@ class ResizeProcess(QObject):
                     folder_counts[dir_name] += 1
                 count = str(folder_counts[dir_name]).zfill(2)
 
-                if not os.path.isdir(dir_dimension_output):
-                    os.makedirs(dir_dimension_output, exist_ok=True)
-                if not os.path.isdir(dir_percent_output):
-                    os.makedirs(dir_percent_output, exist_ok=True)
+                if not os.path.isdir(dir_original_output):
+                    os.makedirs(dir_original_output, exist_ok=True)
+                original_img = Image.open(os.path.join(self.base_dir, dir_name, file_name))
+                original_img.save(os.path.join(self.folder_original_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
 
-                img = Image.open(os.path.join(self.base_dir, dir_name, file_name))
-                resize_img_dimension = img.resize((self.width, self.height), Image.Resampling.LANCZOS)
-                resize_img_percent = img.resize((int(img.width * self.percent / 100), int(img.height * self.percent / 100)), Image.Resampling.LANCZOS)
+                if self.width is not None and self.height is not None:
+                    if not os.path.isdir(dir_dimension_output):
+                        os.makedirs(dir_dimension_output, exist_ok=True)
+                    resize_img_dimension = original_img.resize((self.width, self.height), Image.Resampling.LANCZOS)
+                    resize_img_dimension.save(os.path.join(self.folder_dimension_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
 
-                resize_img_dimension.save(os.path.join(self.folder_dimension_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
-                resize_img_percent.save(os.path.join(self.folder_percent_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
+                if self.percent is not None:
+                    if not os.path.isdir(dir_percent_output):
+                        os.makedirs(dir_percent_output, exist_ok=True)
+                    resize_img_percent = original_img.resize((int(original_img.width * self.percent / 100), int(original_img.height * self.percent / 100)), Image.Resampling.LANCZOS)
+                    resize_img_percent.save(os.path.join(self.folder_percent_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
 
                 self.progress.emit(int((i + 1) / total * 100))
 
@@ -187,11 +198,6 @@ class ImageResizeApp(QWidget):
                     if file.lower().endswith(image_extensions):
                         subfolder_name = os.path.basename(root)
 
-                        # image_path = os.path.join(root, file)
-                        # pixmap = QPixmap(image_path).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                        # if pixmap.isNull():
-                        #     continue
-
                         item = QListWidgetItem(f"{subfolder_name} / {file}")
                         item.setData(Qt.ItemDataRole.UserRole, (subfolder_name, file))
 
@@ -205,17 +211,26 @@ class ImageResizeApp(QWidget):
 
     def start_click(self):
         # Validate input text
-        try:
+        if not self.width_input.text() and not self.height_input.text() and not self.percent_input.text():
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Please enter numbers."
+            )
+            return
+
+        if not self.percent_input.text():
+            width = int(self.width_input.text())
+            height = int(self.height_input.text())
+            percent = None
+        elif not self.width_input.text() and not self.height_input.text():
+            width = None
+            height = None
+            percent = int(self.percent_input.text())
+        else:
             width = int(self.width_input.text())
             height = int(self.height_input.text())
             percent = int(self.percent_input.text())
-        except ValueError:
-            QMessageBox.warning(
-                self, # parent
-                "Error", # title
-                "Please enter valid numbers." # text
-            )
-            return
 
         self.resize_thread = QThread()
         self.resize_process = ResizeProcess(self.base_dir, self.villa_name, self.image_infos, width, height, percent)
