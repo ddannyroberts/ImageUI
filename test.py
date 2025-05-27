@@ -1,6 +1,7 @@
 import os
 import sys
 from PIL import Image
+from pillow_heif import register_heif_opener
 from PyQt6.QtWidgets import (
     QApplication,
     QMessageBox,
@@ -81,6 +82,8 @@ class ResizeProcess(QObject):
 
                 if not os.path.isdir(dir_original_output):
                     os.makedirs(dir_original_output, exist_ok=True)
+
+                register_heif_opener()
                 original_img = Image.open(os.path.join(self.base_dir, dir_name, file_name))
                 original_img.save(os.path.join(self.folder_original_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
 
