@@ -1,6 +1,6 @@
 import os
 import sys
-from PIL import Image
+from PIL import Image, ImageFile, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 from PyQt6.QtWidgets import (
     QApplication,
@@ -25,6 +25,8 @@ from PyQt6.QtCore import (
     QObject,
     pyqtSignal,
 )
+
+image_extensions = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp")
 
 class ResizeProcess(QObject):
     progress = pyqtSignal(int)
@@ -84,7 +86,23 @@ class ResizeProcess(QObject):
                     os.makedirs(dir_original_output, exist_ok=True)
 
                 register_heif_opener()
-                original_img = Image.open(os.path.join(self.base_dir, dir_name, file_name))
+                # original_img = Image.open(os.path.join(self.base_dir, dir_name, file_name))
+                input_path = os.path.join(self.base_dir, dir_name, file_name)
+
+                with open(input_path, "rb") as f:
+                    data = f.read()
+                    has_eoi = data[-2:] == b'\xff\xd9'
+                    try:
+                        if not has_eoi and file_extension.lower() in image_extensions:
+                            ImageFile.LOAD_TRUNCATED_IMAGES = True
+                            original_img = Image.open(input_path)
+                            original_img.load()
+                            original_img = original_img.convert("RGB")
+                        else:
+                            original_img = Image.open(input_path)
+                    except UnidentifiedImageError:
+                        continue
+
                 original_img.save(os.path.join(self.folder_original_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
 
                 if self.width is not None and self.height is not None:
@@ -195,7 +213,6 @@ class ImageResizeApp(QWidget):
             caption="Select From Folder"
         )
         if folder_path:
-            image_extensions = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp")
             for root, _, files in os.walk(folder_path):
                 for file in files:
                     if file.lower().endswith(image_extensions):
