@@ -1,4 +1,5 @@
 Pillow==11.2.1
+pillow_avif_plugin==1.5.2
 pillow_heif==0.22.0
-PyQt6==6.9.0
+PyQt6==6.9.1
 PyQt6_sip==13.10.0
