@@ -1,6 +1,7 @@
 import os
 import sys
 from PIL import Image, ImageFile, UnidentifiedImageError
+import pillow_avif
 from pillow_heif import register_heif_opener
 from PyQt6.QtWidgets import (
     QApplication,
@@ -26,7 +27,7 @@ from PyQt6.QtCore import (
     pyqtSignal,
 )
 
-image_extensions = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp")
+image_extensions = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".avif")
 
 class ResizeProcess(QObject):
     progress = pyqtSignal(int)

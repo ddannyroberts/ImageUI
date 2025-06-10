@@ -26,22 +26,28 @@ class ResizeWorker(QThread):
                 return
 
             folder_name = os.path.basename(self.base_dir.rstrip("/"))
-            output_base = os.path.join(os.path.expanduser("~/Documents"), "ImageResizerOutput")
+            output_base = os.path.join(os.path.expanduser(
+                "~/Documents"), "ImageResizerOutput")
 
-            fixed_output = os.path.join(output_base, f"{folder_name}_{self.width}x{self.height}")
-            percent_output = os.path.join(output_base, f"{folder_name}_{self.percent}%")
+            fixed_output = os.path.join(output_base, f"{folder_name}_{
+                                        self.width}x{self.height}")
+            percent_output = os.path.join(
+                output_base, f"{folder_name}_{self.percent}%")
 
             for i, (abs_path, rel_path) in enumerate(self.image_infos):
                 img = Image.open(abs_path)
                 filename = os.path.basename(abs_path)
 
                 # Fixed resize
-                fixed_dir = os.path.join(fixed_output, os.path.dirname(rel_path))
+                fixed_dir = os.path.join(
+                    fixed_output, os.path.dirname(rel_path))
                 os.makedirs(fixed_dir, exist_ok=True)
-                img.resize((self.width, self.height)).save(os.path.join(fixed_dir, filename))
+                img.resize((self.width, self.height)).save(
+                    os.path.join(fixed_dir, filename))
 
                 # Percent resize
-                percent_dir = os.path.join(percent_output, os.path.dirname(rel_path))
+                percent_dir = os.path.join(
+                    percent_output, os.path.dirname(rel_path))
                 os.makedirs(percent_dir, exist_ok=True)
                 pw = int(img.width * self.percent / 100)
                 ph = int(img.height * self.percent / 100)
@@ -80,7 +86,8 @@ class ImageResizer(QWidget):
 
         self.image_list = QListWidget()
         self.image_list.setIconSize(QSize(64, 64))
-        self.image_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.image_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection)
         self.layout.addWidget(self.image_list)
 
         button_layout = QHBoxLayout()
@@ -150,7 +157,8 @@ class ImageResizer(QWidget):
         return valid
 
     def choose_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Choose Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Choose Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
         if file_path:
             self.base_dir = os.path.dirname(file_path)
             rel_path = os.path.basename(file_path)
@@ -177,7 +185,8 @@ class ImageResizer(QWidget):
     def load_image_list(self):
         self.image_list.clear()
         for abs_path, _ in self.image_infos:
-            pixmap = QPixmap(abs_path).scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio)
+            pixmap = QPixmap(abs_path).scaled(
+                64, 64, Qt.AspectRatioMode.KeepAspectRatio)
             item = QListWidgetItem(QIcon(pixmap), os.path.basename(abs_path))
             item.setData(Qt.ItemDataRole.UserRole, abs_path)
             self.image_list.addItem(item)
@@ -187,7 +196,8 @@ class ImageResizer(QWidget):
         for item in self.image_list.selectedItems():
             abs_path = item.data(Qt.ItemDataRole.UserRole)
             removed += [(p, r) for (p, r) in self.image_infos if p == abs_path]
-            self.image_infos = [(p, r) for (p, r) in self.image_infos if p != abs_path]
+            self.image_infos = [(p, r)
+                                for (p, r) in self.image_infos if p != abs_path]
             self.image_list.takeItem(self.image_list.row(item))
         if removed:
             self.undo_stack.append(removed)
@@ -212,7 +222,8 @@ class ImageResizer(QWidget):
             QMessageBox.warning(self, "Error", "No images to resize.")
             return
         if not self.validate_inputs():
-            QMessageBox.warning(self, "Error", "All input fields are required.")
+            QMessageBox.warning(
+                self, "Error", "All input fields are required.")
             return
         try:
             width = int(self.width_input.text())
@@ -225,7 +236,8 @@ class ImageResizer(QWidget):
         self.progress.setValue(0)
         self.result_label.setText("")
 
-        self.worker = ResizeWorker(self.image_infos, width, height, percent, self.base_dir)
+        self.worker = ResizeWorker(
+            self.image_infos, width, height, percent, self.base_dir)
         self.worker.progress.connect(self.progress.setValue)
         self.worker.finished.connect(self.on_finished)
         self.worker.start()
@@ -249,6 +261,7 @@ class ImageResizer(QWidget):
                 if path not in [p for p, _ in self.image_infos]:
                     self.image_infos.append((path, rel_path))
         self.load_image_list()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
