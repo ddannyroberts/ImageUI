@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
 )
+
 from PyQt6.QtGui import (
     QIntValidator,
 )
@@ -104,19 +105,19 @@ class ResizeProcess(QObject):
                     except UnidentifiedImageError:
                         continue
 
-                original_img.save(os.path.join(self.folder_original_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
+                original_img.save(os.path.join(self.folder_original_output, dir_name, f"{self.villa_name}_{dir_name}_{count}.jpg"),format="JPEG")
 
                 if self.width is not None and self.height is not None:
                     if not os.path.isdir(dir_dimension_output):
                         os.makedirs(dir_dimension_output, exist_ok=True)
                     resize_img_dimension = original_img.resize((self.width, self.height), Image.Resampling.LANCZOS)
-                    resize_img_dimension.save(os.path.join(self.folder_dimension_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
+                    resize_img_dimension.save(os.path.join(self.folder_dimension_output, dir_name, f"{self.villa_name}_{dir_name}_{count}.jpg"), format="JPEG")
 
                 if self.percent is not None:
                     if not os.path.isdir(dir_percent_output):
                         os.makedirs(dir_percent_output, exist_ok=True)
                     resize_img_percent = original_img.resize((int(original_img.width * self.percent / 100), int(original_img.height * self.percent / 100)), Image.Resampling.LANCZOS)
-                    resize_img_percent.save(os.path.join(self.folder_percent_output, dir_name, f"{self.villa_name}_{dir_name}_{count}{file_extension}"))
+                    resize_img_percent.save(os.path.join(self.folder_percent_output, dir_name, f"{self.villa_name}_{dir_name}_{count}.jpg"), format="JPEG")
 
                 self.progress.emit(int((i + 1) / total * 100))
 
