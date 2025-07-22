@@ -73,23 +73,36 @@ class ResizeProcess(QObject):
                 return
 
             for i, (dir_name, file_name) in enumerate(self.images):
-                dir_original_output = os.path.join(self.folder_original_output, dir_name)
-                dir_dimension_output = os.path.join(self.folder_dimension_output, dir_name)
-                dir_percent_output = os.path.join(self.folder_percent_output, dir_name)
+                # Handle proper input path construction
+                if dir_name == self.villa_name:
+                    # Files in root directory
+                    input_path = os.path.join(self.base_dir, file_name)
+                    output_subdir = ""  # No subdirectory for root files
+                else:
+                    # Files in subdirectories
+                    input_path = os.path.join(self.base_dir, dir_name, file_name)
+                    output_subdir = dir_name
+                
+                # Create output directories with proper structure
+                dir_original_output = os.path.join(self.folder_original_output, output_subdir) if output_subdir else self.folder_original_output
+                dir_dimension_output = os.path.join(self.folder_dimension_output, output_subdir) if output_subdir else self.folder_dimension_output
+                dir_percent_output = os.path.join(self.folder_percent_output, output_subdir) if output_subdir else self.folder_percent_output
+                
                 file_extension = os.path.splitext(file_name)[1]
 
-                if dir_name not in folder_counts:
-                    folder_counts[dir_name] = 1
+                # Use full path for counting to avoid conflicts between folders
+                count_key = f"{dir_name}_{file_name}"
+                if count_key not in folder_counts:
+                    folder_counts[count_key] = 1
                 else:
-                    folder_counts[dir_name] += 1
-                count = str(folder_counts[dir_name]).zfill(2)
+                    folder_counts[count_key] += 1
+                count = str(folder_counts[count_key]).zfill(2)
 
+                # Create output directories
                 if not os.path.isdir(dir_original_output):
                     os.makedirs(dir_original_output, exist_ok=True)
 
                 register_heif_opener()
-                # original_img = Image.open(os.path.join(self.base_dir, dir_name, file_name))
-                input_path = os.path.join(self.base_dir, dir_name, file_name)
 
                 with open(input_path, "rb") as f:
                     data = f.read()
@@ -105,19 +118,23 @@ class ResizeProcess(QObject):
                     except UnidentifiedImageError:
                         continue
 
-                original_img.save(os.path.join(self.folder_original_output, dir_name, f"{self.villa_name}_{dir_name}_{count}.jpg"),format="JPEG")
+                # Generate output filename
+                base_name = os.path.splitext(file_name)[0]
+                output_filename = f"{self.villa_name}_{base_name}_{count}.jpg"
+                
+                original_img.save(os.path.join(dir_original_output, output_filename), format="JPEG")
 
                 if self.width is not None and self.height is not None:
                     if not os.path.isdir(dir_dimension_output):
                         os.makedirs(dir_dimension_output, exist_ok=True)
                     resize_img_dimension = original_img.resize((self.width, self.height), Image.Resampling.LANCZOS)
-                    resize_img_dimension.save(os.path.join(self.folder_dimension_output, dir_name, f"{self.villa_name}_{dir_name}_{count}.jpg"), format="JPEG")
+                    resize_img_dimension.save(os.path.join(dir_dimension_output, output_filename), format="JPEG")
 
                 if self.percent is not None:
                     if not os.path.isdir(dir_percent_output):
                         os.makedirs(dir_percent_output, exist_ok=True)
                     resize_img_percent = original_img.resize((int(original_img.width * self.percent / 100), int(original_img.height * self.percent / 100)), Image.Resampling.LANCZOS)
-                    resize_img_percent.save(os.path.join(self.folder_percent_output, dir_name, f"{self.villa_name}_{dir_name}_{count}.jpg"), format="JPEG")
+                    resize_img_percent.save(os.path.join(dir_percent_output, output_filename), format="JPEG")
 
                 self.progress.emit(int((i + 1) / total * 100))
 
@@ -215,12 +232,25 @@ class ImageResizeApp(QWidget):
             caption="Select From Folder"
         )
         if folder_path:
+            # Clear existing items
+            self.image_list_widget.clear()
+            self.image_infos.clear()
+            
             for root, _, files in os.walk(folder_path):
                 for file in files:
                     if file.lower().endswith(image_extensions):
-                        subfolder_name = os.path.basename(root)
+                        # Get relative path from base folder to maintain folder structure
+                        relative_path = os.path.relpath(root, folder_path)
+                        if relative_path == '.':
+                            # Files in root directory
+                            subfolder_name = os.path.basename(folder_path)
+                            display_path = file
+                        else:
+                            # Files in subdirectories - show full relative path
+                            subfolder_name = relative_path
+                            display_path = f"{relative_path} / {file}"
 
-                        item = QListWidgetItem(f"{subfolder_name} / {file}")
+                        item = QListWidgetItem(display_path)
                         item.setData(Qt.ItemDataRole.UserRole, (subfolder_name, file))
 
                         self.image_infos.append((subfolder_name, file))
@@ -230,6 +260,17 @@ class ImageResizeApp(QWidget):
                 self.base_dir = folder_path
                 self.villa_name = os.path.basename(self.base_dir)
                 self.villa_label.setText(f"Name: {self.villa_name}")
+                
+                # Show folder structure summary
+                folders = set()
+                for subfolder_name, _ in self.image_infos:
+                    if subfolder_name != os.path.basename(self.base_dir):
+                        folders.add(subfolder_name)
+                
+                if folders:
+                    folder_structure = "\n".join(sorted(folders))
+                    print(f"Found folders:\n{folder_structure}")
+                    print(f"Total images: {len(self.image_infos)}")
 
     def start_click(self):
         # Validate input text
