@@ -24,6 +24,15 @@
    python main.py
    ```
 
+## Run with Runme
+
+All setup and execution commands are available as Runme tasks. You can run them directly from the README.md file using the Runme extension for VS Code or by running `runme run <task-name>` in your terminal.
+
+For example, to run the application:
+```bash
+runme run run-app
+```
+
 ## Build for macOS
 
 To create a standalone `.app` file that can be run on other Mac computers:
