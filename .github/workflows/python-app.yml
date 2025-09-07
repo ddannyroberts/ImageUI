@@ -11,21 +11,24 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Set up Python 3.9
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: 3.9
+    - name: Install Qt
+      run: brew install qt@6
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+    - name: Test with pytest
+      run: |
+        pip install pytest
+        pytest
     - name: Build
       run: |
         python setup.py py2app
-    - name: Run .app file
-      run: |
-        open dist/ImageResizer.app
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
