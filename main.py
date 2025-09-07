@@ -1,270 +1,333 @@
-import sys
 import os
-from PIL import Image
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QFileDialog, QLineEdit, QProgressBar, QMessageBox, QListWidget, QListWidgetItem, QAbstractItemView
-from PyQt6.QtGui import QPixmap, QIcon, QDragEnterEvent, QDropEvent, QKeyEvent, QKeySequence, QIntValidator, QShortcut
-from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
+import sys
+from PIL import Image, ImageFile, UnidentifiedImageError
+import pillow_avif
+from pillow_heif import register_heif_opener
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMessageBox,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QFileDialog,
+    QListWidget,
+    QListWidgetItem,
+    QProgressBar,
+)
 
+from PyQt6.QtGui import (
+    QIntValidator,
+)
+from PyQt6.QtCore import (
+    Qt,
+    QThread,
+    QObject,
+    pyqtSignal,
+)
 
-class ResizeWorker(QThread):
+image_extensions = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".avif")
+
+class ResizeProcess(QObject):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
 
-    def __init__(self, image_infos, width, height, percent, base_dir):
+    def __init__(self, base_dir, villa_name, images, width, height, percent):
         super().__init__()
-        self.image_infos = image_infos
+        self.base_dir = base_dir
+        self.villa_name = villa_name
+        self.images = images
         self.width = width
         self.height = height
         self.percent = percent
-        self.base_dir = base_dir
 
-    def run(self):
+    def resize_work(self):
         try:
-            total = len(self.image_infos)
+            self.output_folder = os.path.join("~", "Pictures", "ImageResizerOutput")
+            # Expand ~ to full name like /Users/<your uesrname> (macOS)
+            self.full_output_folder = os.path.expanduser(self.output_folder)
+            # If not have ~/Documents/ImageResizeOutput folder create it
+            if not os.path.isdir(self.full_output_folder):
+                os.makedirs(self.full_output_folder, exist_ok=True)
+
+            self.folder_original_output = os.path.join(self.full_output_folder, f"{self.villa_name}_High Res")
+            self.folder_dimension_output = os.path.join(self.full_output_folder, f"{self.villa_name}_Resize")
+            self.folder_percent_output = os.path.join(self.full_output_folder, f"{self.villa_name}_Low Res")
+
+            if not os.path.isdir(self.folder_original_output):
+                os.makedirs(self.folder_original_output, exist_ok=True)
+            if self.width is not None and self.height is not None:
+                if not os.path.isdir(self.folder_dimension_output):
+                    os.makedirs(self.folder_dimension_output, exist_ok=True)
+            if self.percent is not None:
+                if not os.path.isdir(self.folder_percent_output):
+                    os.makedirs(self.folder_percent_output, exist_ok=True)
+
+
+            total = len(self.images)
+            folder_counts = {}
             if total == 0:
-                self.finished.emit("No images to process.")
+                self.finished.emit("No images to process")
                 return
 
-            folder_name = os.path.basename(self.base_dir.rstrip("/"))
-            output_base = os.path.join(os.path.expanduser(
-                "~/Documents"), "ImageResizerOutput")
+            for i, (dir_name, file_name) in enumerate(self.images):
+                # Handle proper input path construction
+                if dir_name == self.villa_name:
+                    # Files in root directory
+                    input_path = os.path.join(self.base_dir, file_name)
+                    output_subdir = ""  # No subdirectory for root files
+                else:
+                    # Files in subdirectories
+                    input_path = os.path.join(self.base_dir, dir_name, file_name)
+                    output_subdir = dir_name
+                
+                # Create output directories with proper structure
+                dir_original_output = os.path.join(self.folder_original_output, output_subdir) if output_subdir else self.folder_original_output
+                dir_dimension_output = os.path.join(self.folder_dimension_output, output_subdir) if output_subdir else self.folder_dimension_output
+                dir_percent_output = os.path.join(self.folder_percent_output, output_subdir) if output_subdir else self.folder_percent_output
+                
+                file_extension = os.path.splitext(file_name)[1]
 
-            fixed_output = os.path.join(output_base, f"{folder_name}_{
-                                        self.width}x{self.height}")
-            percent_output = os.path.join(
-                output_base, f"{folder_name}_{self.percent}%")
+                # Use full path for counting to avoid conflicts between folders
+                count_key = f"{dir_name}_{file_name}"
+                if count_key not in folder_counts:
+                    folder_counts[count_key] = 1
+                else:
+                    folder_counts[count_key] += 1
+                count = str(folder_counts[count_key]).zfill(2)
 
-            for i, (abs_path, rel_path) in enumerate(self.image_infos):
-                img = Image.open(abs_path)
-                filename = os.path.basename(abs_path)
+                # Create output directories
+                if not os.path.isdir(dir_original_output):
+                    os.makedirs(dir_original_output, exist_ok=True)
 
-                # Fixed resize
-                fixed_dir = os.path.join(
-                    fixed_output, os.path.dirname(rel_path))
-                os.makedirs(fixed_dir, exist_ok=True)
-                img.resize((self.width, self.height)).save(
-                    os.path.join(fixed_dir, filename))
+                register_heif_opener()
 
-                # Percent resize
-                percent_dir = os.path.join(
-                    percent_output, os.path.dirname(rel_path))
-                os.makedirs(percent_dir, exist_ok=True)
-                pw = int(img.width * self.percent / 100)
-                ph = int(img.height * self.percent / 100)
-                img.resize((pw, ph)).save(os.path.join(percent_dir, filename))
+                with open(input_path, "rb") as f:
+                    data = f.read()
+                    has_eoi = data[-2:] == b'\xff\xd9'
+                    try:
+                        if not has_eoi and file_extension.lower() in image_extensions:
+                            ImageFile.LOAD_TRUNCATED_IMAGES = True
+                            original_img = Image.open(input_path)
+                            original_img.load()
+                            original_img = original_img.convert("RGB")
+                        else:
+                            original_img = Image.open(input_path)
+                    except UnidentifiedImageError:
+                        continue
+
+                # Generate output filename
+                base_name = os.path.splitext(file_name)[0]
+                output_filename = f"{self.villa_name}_{base_name}_{count}.jpg"
+                
+                original_img.save(os.path.join(dir_original_output, output_filename), format="JPEG")
+
+                if self.width is not None and self.height is not None:
+                    if not os.path.isdir(dir_dimension_output):
+                        os.makedirs(dir_dimension_output, exist_ok=True)
+                    resize_img_dimension = original_img.resize((self.width, self.height), Image.Resampling.LANCZOS)
+                    resize_img_dimension.save(os.path.join(dir_dimension_output, output_filename), format="JPEG")
+
+                if self.percent is not None:
+                    if not os.path.isdir(dir_percent_output):
+                        os.makedirs(dir_percent_output, exist_ok=True)
+                    resize_img_percent = original_img.resize((int(original_img.width * self.percent / 100), int(original_img.height * self.percent / 100)), Image.Resampling.LANCZOS)
+                    resize_img_percent.save(os.path.join(dir_percent_output, output_filename), format="JPEG")
 
                 self.progress.emit(int((i + 1) / total * 100))
 
-            self.finished.emit(
-                f"✅ Saved {total} images to:\n{fixed_output}\n{percent_output}"
-            )
+            self.finished.emit(f"Save images to:\n{self.full_output_folder}")
+
         except Exception as e:
-            self.finished.emit(f"❌ Error: {str(e)}")
+            self.finished.emit(f"Error: {str(e)}")
+            return
 
 
-class ImageResizer(QWidget):
+class ImageResizeApp(QWidget):
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Image Resizer")
-        self.setGeometry(100, 100, 600, 600)
-        self.setAcceptDrops(True)
 
-        self.layout = QVBoxLayout()
+        browse_button_layout = QHBoxLayout()
 
-        self.label = QLabel("Browse or Drag & Drop images or folders:")
-        self.layout.addWidget(self.label)
+        self.browse_folder_button = QPushButton("Browse Folder")
+        self.browse_folder_button.clicked.connect(self.browse_folder_cilck)
+        browse_button_layout.addWidget(self.browse_folder_button)
 
-        browse_layout = QHBoxLayout()
-        self.choose_file_button = QPushButton("Browse Image")
-        self.choose_file_button.clicked.connect(self.choose_file)
-        browse_layout.addWidget(self.choose_file_button)
+        self.image_infos = []
+        self.base_dir = ''
+        self.villa_name = os.path.basename(self.base_dir)
 
-        self.choose_folder_button = QPushButton("Browse Folder")
-        self.choose_folder_button.clicked.connect(self.choose_folder)
-        browse_layout.addWidget(self.choose_folder_button)
-        self.layout.addLayout(browse_layout)
+        ##### Input Layout #####
+        input_field_layout = QVBoxLayout()
+        input_dimension_filed_layout = QHBoxLayout()
+        input_percent_filed_layout = QHBoxLayout()
 
-        self.image_list = QListWidget()
-        self.image_list.setIconSize(QSize(64, 64))
-        self.image_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.layout.addWidget(self.image_list)
-
-        button_layout = QHBoxLayout()
-        self.delete_button = QPushButton("Delete Selected Images")
-        self.delete_button.clicked.connect(self.delete_selected_images)
-        button_layout.addWidget(self.delete_button)
-
-        self.delete_all_button = QPushButton("Delete All Images")
-        self.delete_all_button.clicked.connect(self.delete_all_images)
-        button_layout.addWidget(self.delete_all_button)
-
-        self.undo_button = QPushButton("Undo Delete")
-        self.undo_button.clicked.connect(self.undo_delete)
-        button_layout.addWidget(self.undo_button)
-        self.layout.addLayout(button_layout)
-
-        size_layout = QHBoxLayout()
+        # Width Input
         self.width_input = QLineEdit()
-        self.width_input.setPlaceholderText("Width")
+        self.width_input.setPlaceholderText("width (1 - 10000)")
+        self.width_input.setValidator(QIntValidator(1,10000))
+
+        # Height Input
         self.height_input = QLineEdit()
-        self.height_input.setPlaceholderText("Height")
+        self.height_input.setPlaceholderText("height (1 - 10000)")
+        self.height_input.setValidator(QIntValidator(1,10000))
+
+        # Width x Height Input Layout
+        input_dimension_filed_layout.addWidget(self.width_input)
+        input_dimension_filed_layout.addWidget(QLabel("x"))
+        input_dimension_filed_layout.addWidget(self.height_input)
+
+        # Percent
         self.percent_input = QLineEdit()
-        self.percent_input.setPlaceholderText("Percent %")
-        size_layout.addWidget(self.width_input)
-        size_layout.addWidget(self.height_input)
-        size_layout.addWidget(self.percent_input)
-        self.layout.addLayout(size_layout)
+        self.percent_input.setPlaceholderText("percent (1 - 500)")
+        self.percent_input.setValidator(QIntValidator(1,500))
 
-        int_validator = QIntValidator(1, 10000)
-        self.width_input.setValidator(int_validator)
-        self.height_input.setValidator(int_validator)
-        self.percent_input.setValidator(QIntValidator(1, 500))
+        # Percent Input Layout
+        input_percent_filed_layout.addWidget(self.percent_input)
+        input_percent_filed_layout.addWidget(QLabel("%"))
 
-        input_style = "color: white; background-color: #1e1e1e; border: 1px solid gray; padding: 2px;"
-        for field in [self.width_input, self.height_input, self.percent_input]:
-            field.setStyleSheet(input_style)
+        input_field_layout.addLayout(input_dimension_filed_layout)
+        input_field_layout.addLayout(input_percent_filed_layout)
 
-        self.start_button = QPushButton("Resize Images")
-        self.start_button.clicked.connect(self.resize_images)
-        self.layout.addWidget(self.start_button)
+        self.villa_label = QLabel(f"Name: {self.villa_name}")
+        self.villa_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.progress = QProgressBar()
-        self.layout.addWidget(self.progress)
+        self.start_button = QPushButton("Start")
+        self.start_button.clicked.connect(self.start_click)
 
+        self.delete_all_button = QPushButton("Delete All")
+        self.delete_all_button.clicked.connect(self.delete_all_click)
+
+        self.image_list_widget = QListWidget()
+        self.image_list_widget.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+
+        ##### Progress Bar #####
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+
+        ##### Result Label #####
         self.result_label = QLabel("")
         self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.layout.addWidget(self.result_label)
 
-        self.setLayout(self.layout)
+        ##### Main Layout #####
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(input_field_layout)
+        main_layout.addWidget(self.villa_label)
+        main_layout.addWidget(self.image_list_widget)
+        main_layout.addLayout(browse_button_layout)
+        main_layout.addWidget(self.delete_all_button)
+        main_layout.addWidget(self.start_button)
+        main_layout.addWidget(self.progress_bar)
+        main_layout.addWidget(self.result_label)
 
-        self.base_dir = ""
-        self.image_infos = []
-        self.undo_stack = []
+        self.setLayout(main_layout)
 
-        QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.close)
-
-    def validate_inputs(self):
-        valid = True
-        error_style = "color: white; background-color: #2a0000; border: 2px solid #ff4c4c; padding: 2px;"
-        ok_style = "color: white; background-color: #1e1e1e; border: 1px solid gray; padding: 2px;"
-        for field in [self.width_input, self.height_input, self.percent_input]:
-            if not field.text().strip():
-                field.setStyleSheet(error_style)
-                valid = False
-            else:
-                field.setStyleSheet(ok_style)
-        return valid
-
-    def choose_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Choose Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
-        if file_path:
-            self.base_dir = os.path.dirname(file_path)
-            rel_path = os.path.basename(file_path)
-            if file_path not in [p for p, _ in self.image_infos]:
-                self.image_infos.append((file_path, rel_path))
-            self.load_image_list()
-
-    def choose_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Choose Folder")
+    def browse_folder_cilck(self):
+        folder_path = QFileDialog.getExistingDirectory(
+            parent=self,
+            caption="Select From Folder"
+        )
         if folder_path:
-            self.base_dir = folder_path
-            self.add_images_from_folder(folder_path)
-            self.load_image_list()
+            # Clear existing items
+            self.image_list_widget.clear()
+            self.image_infos.clear()
+            
+            for root, _, files in os.walk(folder_path):
+                for file in files:
+                    if file.lower().endswith(image_extensions):
+                        # Get relative path from base folder to maintain folder structure
+                        relative_path = os.path.relpath(root, folder_path)
+                        if relative_path == '.':
+                            # Files in root directory
+                            subfolder_name = os.path.basename(folder_path)
+                            display_path = file
+                        else:
+                            # Files in subdirectories - show full relative path
+                            subfolder_name = relative_path
+                            display_path = f"{relative_path} / {file}"
 
-    def add_images_from_folder(self, folder):
-        for root, _, files in os.walk(folder):
-            for file in files:
-                if file.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
-                    abs_path = os.path.join(root, file)
-                    rel_path = os.path.relpath(abs_path, start=self.base_dir)
-                    if abs_path not in [p for p, _ in self.image_infos]:
-                        self.image_infos.append((abs_path, rel_path))
+                        item = QListWidgetItem(display_path)
+                        item.setData(Qt.ItemDataRole.UserRole, (subfolder_name, file))
 
-    def load_image_list(self):
-        self.image_list.clear()
-        for abs_path, _ in self.image_infos:
-            pixmap = QPixmap(abs_path).scaled(
-                64, 64, Qt.AspectRatioMode.KeepAspectRatio)
-            item = QListWidgetItem(QIcon(pixmap), os.path.basename(abs_path))
-            item.setData(Qt.ItemDataRole.UserRole, abs_path)
-            self.image_list.addItem(item)
+                        self.image_infos.append((subfolder_name, file))
+                        self.image_list_widget.addItem(item)
 
-    def delete_selected_images(self):
-        removed = []
-        for item in self.image_list.selectedItems():
-            abs_path = item.data(Qt.ItemDataRole.UserRole)
-            removed += [(p, r) for (p, r) in self.image_infos if p == abs_path]
-            self.image_infos = [(p, r)
-                                for (p, r) in self.image_infos if p != abs_path]
-            self.image_list.takeItem(self.image_list.row(item))
-        if removed:
-            self.undo_stack.append(removed)
+            if self.image_infos:
+                self.base_dir = folder_path
+                self.villa_name = os.path.basename(self.base_dir)
+                self.villa_label.setText(f"Name: {self.villa_name}")
+                
+                # Show folder structure summary
+                folders = set()
+                for subfolder_name, _ in self.image_infos:
+                    if subfolder_name != os.path.basename(self.base_dir):
+                        folders.add(subfolder_name)
+                
+                if folders:
+                    folder_structure = "\n".join(sorted(folders))
+                    print(f"Found folders:\n{folder_structure}")
+                    print(f"Total images: {len(self.image_infos)}")
 
-    def delete_all_images(self):
-        if self.image_infos:
-            self.undo_stack.append(self.image_infos.copy())
-            self.image_infos = []
-            self.image_list.clear()
-
-    def undo_delete(self):
-        if self.undo_stack:
-            restored = self.undo_stack.pop()
-            existing_paths = [p for p, _ in self.image_infos]
-            for info in restored:
-                if info[0] not in existing_paths:
-                    self.image_infos.append(info)
-            self.load_image_list()
-
-    def resize_images(self):
-        if not self.image_infos:
-            QMessageBox.warning(self, "Error", "No images to resize.")
-            return
-        if not self.validate_inputs():
+    def start_click(self):
+        # Validate input text
+        if not self.width_input.text() and not self.height_input.text() and not self.percent_input.text():
             QMessageBox.warning(
-                self, "Error", "All input fields are required.")
+                self,
+                "Error",
+                "Please enter numbers."
+            )
             return
-        try:
+
+        if not self.percent_input.text():
+            width = int(self.width_input.text())
+            height = int(self.height_input.text())
+            percent = None
+        elif not self.width_input.text() and not self.height_input.text():
+            width = None
+            height = None
+            percent = int(self.percent_input.text())
+        else:
             width = int(self.width_input.text())
             height = int(self.height_input.text())
             percent = int(self.percent_input.text())
-        except ValueError:
-            QMessageBox.warning(self, "Error", "Please enter valid numbers.")
-            return
 
-        self.progress.setValue(0)
-        self.result_label.setText("")
+        self.resize_thread = QThread()
+        self.resize_process = ResizeProcess(self.base_dir, self.villa_name, self.image_infos, width, height, percent)
+        self.resize_process.moveToThread(self.resize_thread)
 
-        self.worker = ResizeWorker(
-            self.image_infos, width, height, percent, self.base_dir)
-        self.worker.progress.connect(self.progress.setValue)
-        self.worker.finished.connect(self.on_finished)
-        self.worker.start()
+        self.resize_thread.started.connect(self.resize_process.resize_work)
+
+        self.progress_bar.setValue(0)
+        self.resize_process.progress.connect(self.progress_bar.setValue)
+
+        self.resize_process.finished.connect(self.on_finished)
+
+        self.resize_thread.start()
 
     def on_finished(self, result):
         self.result_label.setText(result)
 
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
+        self.villa_name = ""
+        self.villa_label.setText(f"Name: {self.villa_name}")
+        self.image_infos.clear()
+        self.image_list_widget.clear()
 
-    def dropEvent(self, event: QDropEvent):
-        for url in event.mimeData().urls():
-            path = url.toLocalFile()
-            if os.path.isdir(path):
-                self.base_dir = path
-                self.add_images_from_folder(path)
-            elif os.path.isfile(path) and path.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
-                self.base_dir = os.path.dirname(path)
-                rel_path = os.path.basename(path)
-                if path not in [p for p, _ in self.image_infos]:
-                    self.image_infos.append((path, rel_path))
-        self.load_image_list()
+        self.resize_thread.quit()
+        self.resize_thread.wait()
 
+    def delete_all_click(self):
+        self.villa_name = ""
+        self.villa_label.setText(f"Name: {self.villa_name}")
+
+        self.image_list_widget.clear()
+        self.image_infos.clear()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = ImageResizer()
+    window = ImageResizeApp()
     window.show()
     sys.exit(app.exec())
