@@ -7,16 +7,17 @@ Usage:
 
 from setuptools import setup
 
-APP = ['main.py']
+APP = ["main.py"]
 DATA_FILES = []
 OPTIONS = {
-    'packages': ['PIL', 'pillow_avif', 'pillow_heif', 'PyQt6'],
+    "iconfile": "icon.icns",
+    "packages": ["PIL", "pillow_avif", "pillow_heif", "PyQt6"],
 }
 
 setup(
     app=APP,
     name="ImageResizer",
     data_files=DATA_FILES,
-    options={'py2app': OPTIONS},
-    setup_requires=['py2app'],
+    options={"py2app": OPTIONS},
+    setup_requires=["py2app"],
 )
